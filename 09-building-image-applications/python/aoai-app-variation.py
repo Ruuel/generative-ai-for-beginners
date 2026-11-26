@@ -8,11 +8,13 @@ import json
 # import dotenv
 dotenv.load_dotenv()
 
-# Get endpoint and key from environment variables
+# Dated api_version strings get retired roughly a year after a newer one
+# ships - see https://learn.microsoft.com/azure/ai-foundry/openai/api-version-lifecycle
+# for the current value if this one stops working.
 client = AzureOpenAI(
   api_key=os.environ['AZURE_OPENAI_API_KEY'],  # this is also the default, it can be omitted
-  api_version = "2023-12-01-preview",
-  azure_endpoint=os.environ['AZURE_OPENAI_ENDPOINT'] 
+  api_version = "2024-10-21",
+  azure_endpoint=os.environ['AZURE_OPENAI_ENDPOINT']
   )
 
 model = os.environ['AZURE_OPENAI_DEPLOYMENT']
@@ -34,7 +36,6 @@ try:
         size="1024x1024"
     )
 
-    client.images.create_variation()
     response = json.loads(result.model_dump_json())
 
     image_path = os.path.join(image_dir, 'generated_variation.png')
@@ -49,8 +50,8 @@ try:
     # Display the image in the default image viewer
     image = Image.open(image_path)
     image.show()
-#except openai.InvalidRequestError as err:
+#except openai.BadRequestError as err:
 #    print(err)
-    
+
 finally:
     print("completed!")

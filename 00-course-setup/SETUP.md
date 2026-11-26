@@ -109,21 +109,21 @@ Next, we need the endpoints for the specific models we've deployed.
 1. Click the **Model deployments** option in the sidebar (left menu) for Azure OpenAI resource.
 1. In the destination page, click **Manage Deployments**
 
-This will take you to the Azure OpenAI Studio website, where we'll find the other values as described below.
+This will take you to the Microsoft Foundry website (formerly Azure OpenAI Studio), where we'll find the other values as described below.
 
-### 2.4 Configure Azure: From Studio
+### 2.4 Configure Azure: From Microsoft Foundry
 
-1. Navigate to [Azure OpenAI Studio](https://oai.azure.com?WT.mc_id=academic-105485-koreyst) **from your resource** as described above.
+1. Navigate to [Microsoft Foundry](https://oai.azure.com?WT.mc_id=academic-105485-koreyst) **from your resource** as described above.
 1. Click the **Deployments** tab (sidebar, left) to view currently deployed models.
 1. If your desired model is not deployed, use **Create new deployment** to deploy it.
-1. You will need a _text-generation_ model - we recommend: **gpt-35-turbo**
-1. You will need a _text-embedding_ model - we recommend **text-embedding-ada-002**
+1. You will need a _text-generation_ model - we recommend: **gpt-4o-mini** (`gpt-35-turbo` has been fully retired by Azure OpenAI)
+1. You will need a _text-embedding_ model - we recommend **text-embedding-3-small** (the newer, cheaper successor to `text-embedding-ada-002`)
 
 Now update the environment variables to reflect the _Deployment name_ used. This will typically be the same as the model name unless you changed it explcitly. So, as an example, you might have:
 
 ```bash
-AZURE_OPENAI_DEPLOYMENT='gpt-35-turbo'
-AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT='text-embedding-ada-002'
+AZURE_OPENAI_DEPLOYMENT='gpt-4o-mini'
+AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT='text-embedding-3-small'
 ```
 
 **Don't forget to save the .env file when done**. You can now exit the file and return to the instructions for running the notebook.

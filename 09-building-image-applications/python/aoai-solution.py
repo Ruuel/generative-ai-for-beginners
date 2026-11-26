@@ -10,11 +10,13 @@ dotenv.load_dotenv()
 
  
 
-# Assign the API version (DALL-E is currently supported for the 2023-06-01-preview API version only)
+# Dated api_version strings get retired roughly a year after a newer one
+# ships - see https://learn.microsoft.com/azure/ai-foundry/openai/api-version-lifecycle
+# for the current value if this one stops working.
 client = AzureOpenAI(
   api_key=os.environ['AZURE_OPENAI_API_KEY'],  # this is also the default, it can be omitted
-  api_version = "2023-12-01-preview",
-  azure_endpoint=os.environ['AZURE_OPENAI_ENDPOINT'] 
+  api_version = "2024-10-21",
+  azure_endpoint=os.environ['AZURE_OPENAI_ENDPOINT']
   )
 
 model = os.environ['AZURE_OPENAI_DEPLOYMENT']
@@ -71,7 +73,7 @@ try:
     image.show()
 
 # catch exceptions
-#except client.error.InvalidRequestError as err:
+#except openai.BadRequestError as err:
 #    print(err)
 
 finally:
@@ -80,7 +82,7 @@ finally:
 
 
 
-# response = openai.Image.create_variation(
+# response = client.images.create_variation(
 #   image=open(image_path, "rb"),
 #   n=1,
 #   size="1024x1024"
@@ -88,7 +90,7 @@ finally:
 
 # image_path = os.path.join(image_dir, 'generated_variation.png')
 
-# image_url = response['data'][0]['url']
+# image_url = response.data[0].url
 
 # generated_image = requests.get(image_url).content  # download the image
 # with open(image_path, "wb") as image_file:
