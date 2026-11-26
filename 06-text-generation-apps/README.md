@@ -114,48 +114,42 @@ Now that you have this information copied, let's instruct the libraries to use i
 If you're using Azure OpenAI, here's how you setup configuration:
 
 ```python
-openai.api_type = 'azure'
-openai.api_key = os.environ["OPENAI_API_KEY"]
-openai.api_version = '2023-05-15'
-openai.api_base = os.getenv("API_BASE")
+from openai import AzureOpenAI
+
+client = AzureOpenAI(
+    api_key=os.environ["AZURE_OPENAI_API_KEY"],
+    azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+    # Dated api_version strings get retired roughly a year after a newer one
+    # ships - see https://learn.microsoft.com/azure/ai-foundry/openai/api-version-lifecycle
+    # for the current value if this one stops working.
+    api_version="2024-10-21",
+)
 ```
 
 Above we're setting the following:
 
-- `api_type` to `azure`. This tells the library to use Azure OpenAI and not OpenAI.
 - `api_key`, this is your API key found in the Azure Portal.
-- `api_version`, this is the version of the API you want to use. At the time of writing, the latest version is `2023-05-15`.
-- `api_base`, this is the endpoint of the API. You can find it in the Azure Portal next to your API key.
+- `azure_endpoint`, this is the endpoint of the API. You can find it in the Azure Portal next to your API key.
+- `api_version`, this is the version of the API you want to use.
 
-> [!NOTE] > `os.getenv` is a function that reads environment variables. You can use it to read environment variables like `OPENAI_API_KEY` and `API_BASE`. Set these environment variables in your terminal or by using a library like `dotenv`.
+> [!NOTE] > `os.getenv` is a function that reads environment variables. You can use it to read environment variables like `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_ENDPOINT`. Set these environment variables in your terminal or by using a library like `dotenv`.
 
 ## Generate text
 
-The way to generate text is to use the `Completion` class. Here's an example:
+The way to generate text is to use the chat completions API. Here's an example:
 
 ```python
 prompt = "Complete the following: Once upon a time there was a"
+messages = [{"role": "user", "content": prompt}]
 
-completion = openai.Completion.create(model="davinci-002", prompt=prompt)
-print(completion.choices[0].text)
-```
-
-In the above code, we create a completion object and pass in the model we want to use and the prompt. Then we print the generated text.
-
-### Chat completions
-
-So far, you've seen how we've been using `Completion` to generate text. But there's another class called `ChatCompletion` that is more suited for chatbots. Here's an example of using it:
-
-```python
-import openai
-
-openai.api_key = "sk-..."
-
-completion = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=[{"role": "user", "content": "Hello world"}])
+completion = client.chat.completions.create(model=deployment_name, messages=messages)
 print(completion.choices[0].message.content)
 ```
 
-More on this functionality in an upcoming chapter.
+In the above code, we create a completion object and pass in the model (or, for Azure, the deployment name) we want to use and the prompt, wrapped as a chat message. Then we print the generated text.
+
+> [!NOTE]
+> Older versions of this guide used a separate `Completion` class (`openai.Completion.create(model="davinci-002", prompt=prompt)`) for plain text completion, as distinct from `ChatCompletion` for chatbots. That `Completion` class and the completion-only models it targeted (like `davinci-002`) are legacy: current model families are chat/instruction-tuned only, so `chat.completions.create` is the one API you need going forward.
 
 ## Exercise - your first text generation app
 
@@ -178,13 +172,13 @@ Now that we learned how to set up and configure openai, it's time to build your 
 1. Create an _app.py_ file and give it the following code:
 
    ```python
-   import openai
+   from openai import AzureOpenAI
 
-   openai.api_key = "<replace this value with your open ai key or Azure OpenAI key>"
-
-   openai.api_type = 'azure'
-   openai.api_version = '2023-05-15'
-   openai.api_base = "<endpoint found in Azure Portal where your API key is>"
+   client = AzureOpenAI(
+       api_key="<replace this value with your Azure OpenAI key>",
+       azure_endpoint="<endpoint found in Azure Portal where your API key is>",
+       api_version="2024-10-21",
+   )
    deployment_name = "<deployment name>"
 
    # add your completion code
@@ -192,14 +186,14 @@ Now that we learned how to set up and configure openai, it's time to build your 
    messages = [{"role": "user", "content": prompt}]
 
    # make completion
-   completion = openai.chat.completions.create(model=deployment_name, messages=messages)
+   completion = client.chat.completions.create(model=deployment_name, messages=messages)
 
    # print response
    print(completion.choices[0].message.content)
    ```
 
    > [!NOTE]
-   > If you're using Azure OpenAI, you need to set the `api_type` to `azure` and set the `api_key` to your Azure OpenAI key.
+   > If you're using the public OpenAI API instead of Azure OpenAI, use `from openai import OpenAI` and `client = OpenAI(api_key="<your OpenAI key>")` instead - no endpoint or `api_version` needed.
 
    You should see an output like the following:
 
@@ -515,7 +509,7 @@ To further improve it, we want to add the following:
 
   new_prompt = f"{old_prompt_result} {prompt}"
   messages = [{"role": "user", "content": new_prompt}]
-  completion = openai.Completion.create(engine=deployment_name, messages=messages, max_tokens=1200)
+  completion = client.chat.completions.create(model=deployment_name, messages=messages, max_tokens=1200)
 
   # print response
   print("Shopping list:")
@@ -533,7 +527,7 @@ To further improve it, we want to add the following:
   1. We make a new request, but also considering the number of tokens we asked for in the first prompt, so this time we say `max_tokens` is 1200.
 
      ```python
-     completion = openai.Completion.create(engine=deployment_name, prompt=new_prompt, max_tokens=1200)
+     completion = client.chat.completions.create(model=deployment_name, messages=messages, max_tokens=1200)
      ```
 
      Taking this code for a spin, we now arrive at the following output:
@@ -562,23 +556,31 @@ What we have so far is code that works, but there are some tweaks we should be d
      OPENAI_API_KEY=sk-...
      ```
 
-     > Note, for Azure, you need to set the following environment variables:
+     > Note, for Azure, you need to set the following environment variables instead:
 
      ```bash
-     OPENAI_API_TYPE=azure
-     OPENAI_API_VERSION=2023-05-15
-     OPENAI_API_BASE=<replace>
+     AZURE_OPENAI_API_KEY=<replace>
+     AZURE_OPENAI_ENDPOINT=<replace>
      ```
 
-     In code, you would load the environment variables like so:
+     In code, you would load the environment variables and create the client like so:
 
      ```python
+     import os
      from dotenv import load_dotenv
+     from openai import AzureOpenAI
 
      load_dotenv()
 
-     openai.api_key = os.environ["OPENAI_API_KEY"]
+     client = AzureOpenAI(
+         api_key=os.environ["AZURE_OPENAI_API_KEY"],
+         azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+         api_version="2024-10-21",
+     )
      ```
+
+     > [!NOTE]
+     > If you're using the public OpenAI API instead, just set `OPENAI_API_KEY` and use `client = OpenAI()` - the client picks it up from the environment automatically, no explicit `api_key` argument needed.
 
 - **A word on token length**. We should consider how many tokens we need to generate the text we want. Tokens cost money, so where possible, we should try to be economical with the number of tokens we use. For example, can we phrase the prompt so that we can use less tokens?
 

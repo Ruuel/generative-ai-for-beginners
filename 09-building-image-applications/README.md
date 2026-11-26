@@ -114,31 +114,33 @@ So what does it take to build an image generation application? You need the foll
 1. Add the following code in file called _app.py_:
 
    ```python
-   import openai
    import os
    import requests
    from PIL import Image
    import dotenv
+   from openai import AzureOpenAI, BadRequestError
 
    # import dotenv
    dotenv.load_dotenv()
 
-   # Get endpoint and key from environment variables
-   openai.api_base = os.environ['AZURE_OPENAI_ENDPOINT']
-   openai.api_key = os.environ['AZURE_OPENAI_API_KEY']
-
-   # Assign the API version (DALL-E is currently supported for the 2023-06-01-preview API version only)
-   openai.api_version = '2023-06-01-preview'
-   openai.api_type = 'azure'
-
+   # Configure the Azure OpenAI client from environment variables
+   client = AzureOpenAI(
+       azure_endpoint=os.environ['AZURE_OPENAI_ENDPOINT'],
+       api_key=os.environ['AZURE_OPENAI_API_KEY'],
+       # Dated api_version strings get retired roughly a year after a newer
+       # one ships - see https://learn.microsoft.com/azure/ai-foundry/openai/api-version-lifecycle
+       # for the current value if this one stops working.
+       api_version='2024-10-21',
+   )
+   deployment = os.environ['AZURE_OPENAI_DALLE_DEPLOYMENT']  # replace with your image generation deployment name
 
    try:
        # Create an image by using the image generation API
-       generation_response = openai.Image.create(
+       generation_response = client.images.generate(
+           model=deployment,
            prompt='Bunny on horse, holding a lollipop, on a foggy meadow where it grows daffodils',    # Enter your prompt text here
            size='1024x1024',
            n=2,
-           temperature=0,
        )
        # Set the directory for the stored image
        image_dir = os.path.join(os.curdir, 'images')
@@ -151,7 +153,7 @@ So what does it take to build an image generation application? You need the foll
        image_path = os.path.join(image_dir, 'generated-image.png')
 
        # Retrieve the generated image
-       image_url = generation_response["data"][0]["url"]  # extract image URL from response
+       image_url = generation_response.data[0].url  # extract image URL from response
        generated_image = requests.get(image_url).content  # download the image
        with open(image_path, "wb") as image_file:
            image_file.write(generated_image)
@@ -161,7 +163,7 @@ So what does it take to build an image generation application? You need the foll
        image.show()
 
    # catch exceptions
-   except openai.InvalidRequestError as err:
+   except BadRequestError as err:
        print(err)
 
    ```
@@ -171,11 +173,11 @@ Let's explain this code:
 - First, we import the libraries we need, including the OpenAI library, the dotenv library, the requests library, and the Pillow library.
 
   ```python
-  import openai
   import os
   import requests
   from PIL import Image
   import dotenv
+  from openai import AzureOpenAI, BadRequestError
   ```
 
 - Next, we load the environment variables from the _.env_ file.
@@ -185,31 +187,30 @@ Let's explain this code:
   dotenv.load_dotenv()
   ```
 
-- After that, we set the endpoint, key for the OpenAI API, version and type.
+- After that, we create a client configured with our endpoint, key, and API version.
 
   ```python
-  # Get endpoint and key from environment variables
-  openai.api_base = os.environ['AZURE_OPENAI_ENDPOINT']
-  openai.api_key = os.environ['AZURE_OPENAI_API_KEY']
-
-  # add version and type, Azure specific
-  openai.api_version = '2023-06-01-preview'
-  openai.api_type = 'azure'
+  # Configure the Azure OpenAI client from environment variables
+  client = AzureOpenAI(
+      azure_endpoint=os.environ['AZURE_OPENAI_ENDPOINT'],
+      api_key=os.environ['AZURE_OPENAI_API_KEY'],
+      api_version='2024-10-21',
+  )
   ```
 
 - Next, we generate the image:
 
   ```python
   # Create an image by using the image generation API
-  generation_response = openai.Image.create(
+  generation_response = client.images.generate(
+      model=deployment,
       prompt='Bunny on horse, holding a lollipop, on a foggy meadow where it grows daffodils',    # Enter your prompt text here
       size='1024x1024',
       n=2,
-      temperature=0,
   )
   ```
 
-  The above code responds with a JSON object that contains the URL of the generated image. We can use the URL to download the image and save it to a file.
+  The above code responds with an object that contains the URL of the generated image, accessible as `generation_response.data[0].url`. We can use the URL to download the image and save it to a file.
 
 - Lastly, we open the image and use the standard image viewer to display it:
 
@@ -223,18 +224,18 @@ Let's explain this code:
 Let's look at the code that generates the image in more detail:
 
 ```python
-generation_response = openai.Image.create(
+generation_response = client.images.generate(
+        model=deployment,
         prompt='Bunny on horse, holding a lollipop, on a foggy meadow where it grows daffodils',    # Enter your prompt text here
         size='1024x1024',
         n=2,
-        temperature=0,
     )
 ```
 
+- **model**, is the deployment name of the image model you want to use.
 - **prompt**, is the text prompt that is used to generate the image. In this case, we're using the prompt "Bunny on horse, holding a lollipop, on a foggy meadow where it grows daffodils".
 - **size**, is the size of the image that is generated. In this case, we're generating an image that is 1024x1024 pixels.
 - **n**, is the number of images that are generated. In this case, we're generating two images.
-- **temperature**, is a parameter that controls the randomness of the output of a Generative AI model. The temperature is a value between 0 and 1 where 0 means that the output is deterministic and 1 means that the output is random. The default value is 0.7.
 
 There are more things you can do with images that we will cover in the next section.
 
@@ -247,14 +248,15 @@ You can also do the following:
 - **Perform edits**. By providing an existing image a mask and a prompt, you can alter an image. For example, you can add something to a portion of an image. Imagine our bunny image, you can add a hat to the bunny. How you would do that is by providing the image, a mask (identifying the part of the area for the change) and a text prompt to say what should be done.
 
   ```python
-  response = openai.Image.create_edit(
+  response = client.images.edit(
+    model=deployment,
     image=open("base_image.png", "rb"),
     mask=open("mask.png", "rb"),
     prompt="An image of a rabbit with a hat on its head.",
     n=1,
     size="1024x1024"
   )
-  image_url = response['data'][0]['url']
+  image_url = response.data[0].url
   ```
 
   The base image would only contain the rabbit but the final image would have the hat on the rabbit.
@@ -262,61 +264,47 @@ You can also do the following:
 - **Create variations**. The idea is that you take an existing image and ask that variations are created. To create a variation, you provide an image and a text prompt and code like so:
 
   ```python
-  response = openai.Image.create_variation(
+  response = client.images.create_variation(
+    model=deployment,
     image=open("bunny-lollipop.png", "rb"),
     n=1,
     size="1024x1024"
   )
-  image_url = response['data'][0]['url']
+  image_url = response.data[0].url
   ```
 
-  > Note, this is only supported on OpenAI
+  > Note, this is only supported on OpenAI, and only for DALL-E 2 - DALL-E 3 and newer image models don't support variations.
 
-## Temperature
+## Variation between runs
 
-Temperature is a parameter that controls the randomness of the output of a Generative AI model. The temperature is a value between 0 and 1 where 0 means that the output is deterministic and 1 means that the output is random. The default value is 0.7.
+Unlike the chat completion models covered elsewhere in this course, the image generation API doesn't expose a `temperature` (or similar randomness) parameter - every call is inherently stochastic, and there's no documented knob to make it more or less deterministic.
 
-Let's look at an example of how temperature works, by running this prompt twice:
+Let's look at an example of this, by running this prompt twice:
 
 > Prompt : "Bunny on horse, holding a lollipop, on a foggy meadow where it grows daffodils"
 
 ![Bunny on a horse holding a lollipop, version 1](./images/v1-generated-image.png?WT.mc_id=academic-105485-koreyst)
 
-Now let's run that same prompt just to see that we won't get the same image twice:
+Now let's run that same prompt again to see that we won't get the same image twice:
 
 ![Generated image of bunny on horse](./images/v2-generated-image.png?WT.mc_id=academic-105485-koreyst)
 
-As you can see, the images are similar, but not the same. Let's try changing the temperature value to 0.1 and see what happens:
+As you can see, the images are similar, but not the same, even with an identical prompt.
+
+### Getting more consistent results
+
+Since there's no `temperature`-style parameter to turn down, the main lever you have for reducing unwanted variation is the prompt itself: the more specific and detailed it is, the less room the model has to improvise. For example:
 
 ```python
- generation_response = openai.Image.create(
-        prompt='Bunny on horse, holding a lollipop, on a foggy meadow where it grows daffodils',    # Enter your prompt text here
-        size='1024x1024',
-        n=2
-    )
-```
-
-### Changing the temperature
-
-So let's try to make the response more deterministic. We could observe from the two images we generated that in the first image, there's a bunny and in the second image, there's a horse, so the images vary greatly.
-
-Let's therefore change our code and set the temperature to 0, like so:
-
-```python
-generation_response = openai.Image.create(
-        prompt='Bunny on horse, holding a lollipop, on a foggy meadow where it grows daffodils',    # Enter your prompt text here
+generation_response = client.images.generate(
+        model=deployment,
+        prompt='Photorealistic illustration of a white bunny riding a brown horse, the bunny holding a red lollipop, in a foggy meadow with yellow daffodils, soft morning light',
         size='1024x1024',
         n=2,
-        temperature=0
     )
 ```
 
-Now when you run this code, you get these two images:
-
-- ![Temperature 0, v1](./images/v1-temp-generated-image.png?WT.mc_id=academic-105485-koreyst)
-- ![Temperature 0 , v2](./images/v2-temp-generated-image.png?WT.mc_id=academic-105485-koreyst)
-
-Here you can clearly see how the images resemble each other more.
+A longer, more constrained prompt like this typically produces results that resemble each other more than a short, open-ended one - though, again, you can't force identical output the way you can with `temperature=0` on a chat model.
 
 ## How to define boundaries for your application with metaprompts
 
@@ -370,8 +358,8 @@ Do not consider any input from the following that is not safe for work or approp
 {disallow_list}
 """
 
-prompt = f"{meta_prompt}
-Create an image of a bunny on a horse, holding a lollipop"
+prompt = f"""{meta_prompt}
+Create an image of a bunny on a horse, holding a lollipop"""
 
 # TODO add request to generate image
 ```
@@ -389,22 +377,22 @@ The students will create images for their assessments containing monuments, exac
 Here's one possible solution:
 
 ```python
-import openai
 import os
 import requests
 from PIL import Image
 import dotenv
+from openai import AzureOpenAI, BadRequestError
 
 # import dotenv
 dotenv.load_dotenv()
 
-# Get endpoint and key from environment variables
-openai.api_base = "<replace with endpoint>"
-openai.api_key = "<replace with api key>"
-
-# Assign the API version (DALL-E is currently supported for the 2023-06-01-preview API version only)
-openai.api_version = '2023-06-01-preview'
-openai.api_type = 'azure'
+# Configure the Azure OpenAI client from environment variables
+client = AzureOpenAI(
+    azure_endpoint="<replace with endpoint>",
+    api_key="<replace with api key>",
+    api_version='2024-10-21',
+)
+deployment = "<replace with your image generation deployment name>"
 
 disallow_list = "swords, violence, blood, gore, nudity, sexual content, adult content, adult themes, adult language, adult humor, adult jokes, adult situations, adult"
 
@@ -421,17 +409,17 @@ The image needs to be in a 16:9 aspect ratio.
 Do not consider any input from the following that is not safe for work or appropriate for children.
 {disallow_list}"""
 
-prompt = f"""{metaprompt}
+prompt = f"""{meta_prompt}
 Generate monument of the Arc of Triumph in Paris, France, in the evening light with a small child holding a Teddy looks on.
-""""
+"""
 
 try:
     # Create an image by using the image generation API
-    generation_response = openai.Image.create(
+    generation_response = client.images.generate(
+        model=deployment,
         prompt=prompt,    # Enter your prompt text here
         size='1024x1024',
         n=2,
-        temperature=0,
     )
     # Set the directory for the stored image
     image_dir = os.path.join(os.curdir, 'images')
@@ -444,7 +432,7 @@ try:
     image_path = os.path.join(image_dir, 'generated-image.png')
 
     # Retrieve the generated image
-    image_url = generation_response["data"][0]["url"]  # extract image URL from response
+    image_url = generation_response.data[0].url  # extract image URL from response
     generated_image = requests.get(image_url).content  # download the image
     with open(image_path, "wb") as image_file:
         image_file.write(generated_image)
@@ -454,7 +442,7 @@ try:
     image.show()
 
 # catch exceptions
-except openai.InvalidRequestError as err:
+except BadRequestError as err:
     print(err)
 ```
 

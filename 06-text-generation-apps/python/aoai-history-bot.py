@@ -9,7 +9,9 @@ load_dotenv()
 client = AzureOpenAI(
   azure_endpoint = os.environ["AZURE_OPENAI_ENDPOINT"], 
   api_key=os.environ['AZURE_OPENAI_API_KEY'],  
-  api_version = "2023-10-01-preview"
+  # Dated api_version strings get retired roughly a year after a newer one
+  # ships - see https://learn.microsoft.com/azure/ai-foundry/openai/api-version-lifecycle
+  api_version = "2024-10-21"
   )
 
 deployment=os.environ['AZURE_OPENAI_DEPLOYMENT']

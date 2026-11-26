@@ -112,7 +112,7 @@ Let's say we want to create a database of student data so we can suggest the rig
 
    The above prompts instruct the LLM to extract information and return the response in JSON format.
 
-1. After setting up the prompts and the connection to Azure OpenAI, we will now send the prompts to the LLM by using `openai.ChatCompletion`. We store the prompt in the `messages` variable and assign the role to `user`. This is to mimic a message from a user being written to a chatbot.
+1. After setting up the prompts and the connection to Azure OpenAI, we will now send the prompts to the LLM by using `client.chat.completions.create`. We store the prompt in the `messages` variable and assign the role to `user`. This is to mimic a message from a user being written to a chatbot.
 
    ```python
    # response from prompt one
@@ -206,44 +206,49 @@ messages= [ {"role": "user", "content": "Find me a good course for a beginner st
 
 By assigning different roles, it's made clear to the LLM if it's the system saying something or the user, which helps to build a conversation history that the LLM can build upon.
 
-### Step 2 - creating functions
+### Step 2 - creating tools
 
-Next, we will define a function and the parameters of that function. We will use just one function here called `search_courses` but you can create multiple functions.
+Next, we will define a function and describe it to the LLM as a **tool**. We will use just one tool here, wrapping the function `search_courses`, but you can define multiple tools.
 
-> **Important** : Functions are included in the system message to the LLM and will be included in the amount of available tokens you have available.
+> **Important** : Tool definitions are included in the context sent to the LLM and count against the amount of available tokens you have available.
 
-Below, we create the functions as an array of items. Each item is a function and has properties `name`, `description` and `parameters`:
+> **Note**: Early versions of the Chat Completions API exposed this as a `functions` array with a separate `function_call` parameter. Those have since been deprecated (and newer model families reject the `role: "function"` message they relied on) in favor of the `tools`/`tool_choice` shape shown below, which also supports calling more than one function per turn.
+
+Below, we create the tools as an array of items. Each item has `type: "function"` and a nested `function` object with properties `name`, `description` and `parameters`:
 
 ```python
-functions = [
+tools = [
    {
-      "name":"search_courses",
-      "description":"Retrieves courses from the search index based on the parameters provided",
-      "parameters":{
-         "type":"object",
-         "properties":{
-            "role":{
-               "type":"string",
-               "description":"The role of the learner (i.e. developer, data scientist, student, etc.)"
+      "type": "function",
+      "function": {
+         "name":"search_courses",
+         "description":"Retrieves courses from the search index based on the parameters provided",
+         "parameters":{
+            "type":"object",
+            "properties":{
+               "role":{
+                  "type":"string",
+                  "description":"The role of the learner (i.e. developer, data scientist, student, etc.)"
+               },
+               "product":{
+                  "type":"string",
+                  "description":"The product that the lesson is covering (i.e. Azure, Power BI, etc.)"
+               },
+               "level":{
+                  "type":"string",
+                  "description":"The level of experience the learner has prior to taking the course (i.e. beginner, intermediate, advanced)"
+               }
             },
-            "product":{
-               "type":"string",
-               "description":"The product that the lesson is covering (i.e. Azure, Power BI, etc.)"
-            },
-            "level":{
-               "type":"string",
-               "description":"The level of experience the learner has prior to taking the course (i.e. beginner, intermediate, advanced)"
-            }
-         },
-         "required":[
-            "role"
-         ]
+            "required":[
+               "role"
+            ]
+         }
       }
    }
 ]
 ```
 
-Let's describe each function instance more in detail below:
+Let's describe the function instance more in detail below:
 
 - `name` - The name of the function that we want to have called.
 - `description` - This is the description of how the function works. Here it's important to be specific and clear.
@@ -258,17 +263,17 @@ There's also an optional property `required` - required property for the functio
 
 ### Step 3 - Making the function call
 
-After defining a function, we now need to include it in the call to the Chat Completion API. We do this by adding `functions` to the request. In this case `functions=functions`.
+After defining a tool, we now need to include it in the call to the Chat Completion API. We do this by adding `tools` to the request. In this case `tools=tools`.
 
-There is also an option to set `function_call` to `auto`. This means we will let the LLM decide which function should be called based on the user message rather than assigning it ourselves.
+There is also an option to set `tool_choice` to `auto`. This means we will let the LLM decide which tool should be called based on the user message rather than assigning it ourselves.
 
-Here's some code below where we call `ChatCompletion.create`, note how we set `functions=functions` and `function_call="auto"` and thereby giving the LLM the choice when to call the functions we provide it:
+Here's some code below where we call `chat.completions.create`, note how we set `tools=tools` and `tool_choice="auto"` and thereby giving the LLM the choice when to call the tools we provide it:
 
 ```python
 response = client.chat.completions.create(model=deployment,
                                         messages=messages,
-                                        functions=functions,
-                                        function_call="auto")
+                                        tools=tools,
+                                        tool_choice="auto")
 
 print(response.choices[0].message)
 ```
@@ -278,14 +283,20 @@ The response coming back now looks like so:
 ```json
 {
   "role": "assistant",
-  "function_call": {
-    "name": "search_courses",
-    "arguments": "{\n  \"role\": \"student\",\n  \"product\": \"Azure\",\n  \"level\": \"beginner\"\n}"
-  }
+  "tool_calls": [
+    {
+      "id": "call_abc123",
+      "type": "function",
+      "function": {
+        "name": "search_courses",
+        "arguments": "{\n  \"role\": \"student\",\n  \"product\": \"Azure\",\n  \"level\": \"beginner\"\n}"
+      }
+    }
+  ]
 }
 ```
 
-Here we can see how the function `search_courses` was called and with what arguments, as listed in the `arguments` property in the JSON response.
+Here we can see how the function `search_courses` was called and with what arguments, as listed in the `arguments` property of the first entry in `tool_calls`. The LLM can request more than one tool call per turn, which is why `tool_calls` is a list even though this example only ever contains one entry.
 
 The conclusion the LLM was able to find the data to fit the arguments of the function as it was extracting it from the value provided to the `messages` parameter in the chat completion call. Below is a reminder of the `messages` value:
 
@@ -293,7 +304,7 @@ The conclusion the LLM was able to find the data to fit the arguments of the fun
 messages= [ {"role": "user", "content": "Find me a good course for a beginner student to learn Azure."} ]
 ```
 
-As you can see, `student`, `Azure` and `beginner` was extracted from `messages` and set as input to the function. Using functions this way is a great way to extract information from a prompt but also to provide structure to the LLM and have reusable functionality.
+As you can see, `student`, `Azure` and `beginner` was extracted from `messages` and set as input to the function. Using tools this way is a great way to extract information from a prompt but also to provide structure to the LLM and have reusable functionality.
 
 Next, we need to see how we can use this in our app.
 
@@ -333,28 +344,29 @@ To integrate this into our application, let's take the following steps:
      return str(results)
    ```
 
-   Note how we now create an actual Python function that maps to the function names introduced in the `functions` variable. We're also making real external API calls to fetch the data we need. In this case, we go against the Microsoft Learn API to search for training modules.
+   Note how we now create an actual Python function that maps to the tool name introduced in the `tools` variable. We're also making real external API calls to fetch the data we need. In this case, we go against the Microsoft Learn API to search for training modules.
 
-Ok, so we created `functions` variables and a corresponding Python function, how do we tell the LLM how to map these two together so our Python function is called?
+Ok, so we created a `tools` variable and a corresponding Python function, how do we tell the LLM how to map these two together so our Python function is called?
 
-1. To see if we need to call a Python function, we need to look into the LLM response and see if `function_call` is part of it and call the pointed-out function. Here's how you can make the mentioned check below:
+1. To see if we need to call a Python function, we need to look into the LLM response and see if `tool_calls` is part of it and call the pointed-out function. Here's how you can make the mentioned check below:
 
    ```python
-   # Check if the model wants to call a function
-   if response_message.function_call.name:
+   # Check if the model wants to call a tool
+   if response_message.tool_calls:
+    tool_call = response_message.tool_calls[0]
     print("Recommended Function call:")
-    print(response_message.function_call.name)
+    print(tool_call.function.name)
     print()
 
     # Call the function.
-    function_name = response_message.function_call.name
+    function_name = tool_call.function.name
 
     available_functions = {
             "search_courses": search_courses,
     }
     function_to_call = available_functions[function_name]
 
-    function_args = json.loads(response_message.function_call.arguments)
+    function_args = json.loads(tool_call.function.arguments)
     function_response = function_to_call(**function_args)
 
     print("Output of function call:")
@@ -362,32 +374,37 @@ Ok, so we created `functions` variables and a corresponding Python function, how
     print(type(function_response))
 
 
-    # Add the assistant response and function response to the messages
+    # Add the assistant's tool call and the tool's response to the messages
     messages.append( # adding assistant response to messages
         {
-            "role": response_message.role,
-            "function_call": {
-                "name": function_name,
-                "arguments": response_message.function_call.arguments,
-            },
-            "content": None
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": tool_call.id,
+                    "type": "function",
+                    "function": {
+                        "name": function_name,
+                        "arguments": tool_call.function.arguments,
+                    },
+                }
+            ],
         }
     )
-    messages.append( # adding function response to messages
+    messages.append( # adding the tool's response to messages
         {
-            "role": "function",
-            "name": function_name,
-            "content":function_response,
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": function_response,
         }
     )
    ```
 
-   These three lines, ensure we extract the function name, the arguments and make the call:
+   These three lines ensure we extract the function name, the arguments and make the call:
 
    ```python
    function_to_call = available_functions[function_name]
 
-   function_args = json.loads(response_message.function_call.arguments)
+   function_args = json.loads(tool_call.function.arguments)
    function_response = function_to_call(**function_args)
    ```
 
@@ -396,10 +413,7 @@ Ok, so we created `functions` variables and a corresponding Python function, how
    **Output**
 
    ```Recommended Function call:
-   {
-     "name": "search_courses",
-     "arguments": "{\n  \"role\": \"student\",\n  \"product\": \"Azure\",\n  \"level\": \"beginner\"\n}"
-   }
+   search_courses
 
    Output of function call:
    [{'title': 'Describe concepts of cryptography', 'url': 'https://learn.microsoft.com/training/modules/describe-concepts-of-cryptography/?
@@ -422,8 +436,8 @@ Ok, so we created `functions` variables and a corresponding Python function, how
    second_response = client.chat.completions.create(
       messages=messages,
       model=deployment,
-      function_call="auto",
-      functions=functions,
+      tool_choice="auto",
+      tools=tools,
       temperature=0
          )  # get a new response from GPT where it can see the function response
 

@@ -1,3 +1,4 @@
+import openai
 from openai import OpenAI
 import os
 import requests
@@ -41,7 +42,7 @@ try:
     image.show()
 
 # catch exceptions
-except openai.InvalidRequestError as err:
+except openai.BadRequestError as err:
     print(err)
 
 # ---creating variation below---

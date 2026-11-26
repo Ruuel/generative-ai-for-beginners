@@ -10,11 +10,13 @@ dotenv.load_dotenv()
 
  
 
-# Assign the API version (DALL-E is currently supported for the 2023-06-01-preview API version only)
+# Dated api_version strings get retired roughly a year after a newer one
+# ships - see https://learn.microsoft.com/azure/ai-foundry/openai/api-version-lifecycle
+# for the current value if this one stops working.
 client = AzureOpenAI(
   api_key=os.environ['AZURE_OPENAI_API_KEY'],  # this is also the default, it can be omitted
-  api_version = "2023-12-01-preview",
-  azure_endpoint=os.environ['AZURE_OPENAI_ENDPOINT'] 
+  api_version = "2024-10-21",
+  azure_endpoint=os.environ['AZURE_OPENAI_ENDPOINT']
   )
 
 model = os.environ['AZURE_OPENAI_DEPLOYMENT']
@@ -52,7 +54,7 @@ try:
     image.show()
 
 # catch exceptions
-#except client.error.InvalidRequestError as err:
+#except openai.BadRequestError as err:
 #    print(err)
 
 finally:

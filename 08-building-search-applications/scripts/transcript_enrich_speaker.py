@@ -10,7 +10,7 @@ import time
 import argparse
 import dotenv
 import openai
-from openai.embeddings_utils import get_embedding
+from openai import AzureOpenAI
 from rich.progress import Progress
 from tenacity import (
     retry,
@@ -35,14 +35,18 @@ OPENAI_REQUEST_TIMEOUT = 60
 
 OPENAI_MAX_TOKENS = 512
 AZURE_OPENAI_MODEL_DEPLOYMENT_NAME = os.getenv(
-    "AZURE_OPENAI_MODEL_DEPLOYMENT_NAME", "gpt-35-turbo"
+    "AZURE_OPENAI_MODEL_DEPLOYMENT_NAME", "gpt-4o-mini"
 )
 
 
-openai.api_type = "azure"
-openai.api_key = API_KEY
-openai.api_base = RESOURCE_ENDPOINT
-openai.api_version = "2023-07-01-preview"
+# Dated api_version strings get retired roughly a year after a newer one
+# ships - see https://learn.microsoft.com/azure/ai-foundry/openai/api-version-lifecycle
+# for the current value if this one stops working.
+client = AzureOpenAI(
+    api_key=API_KEY,
+    azure_endpoint=RESOURCE_ENDPOINT,
+    api_version="2024-10-21",
+)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-f", "--folder")
@@ -57,22 +61,25 @@ if not TRANSCRIPT_FOLDER:
     exit(1)
 
 get_speaker_name = {
-    "name": "get_speaker_name",
-    "description": "Get the speaker names for the session.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "speakers": {
-                "type": "string",
-                "description": "The speaker names.",
-            }
+    "type": "function",
+    "function": {
+        "name": "get_speaker_name",
+        "description": "Get the speaker names for the session.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "speakers": {
+                    "type": "string",
+                    "description": "The speaker names.",
+                }
+            },
+            "required": ["speakers"],
         },
-        "required": ["speaker_name"],
     },
 }
 
 
-openai_functions = [get_speaker_name]
+openai_tools = [get_speaker_name]
 
 
 # these maps are used to make the function name string to the function call
@@ -104,16 +111,16 @@ counter = Counter()
 @retry(
     wait=wait_random_exponential(min=6, max=10),
     stop=stop_after_attempt(4),
-    retry=retry_if_not_exception_type(openai.InvalidRequestError),
+    retry=retry_if_not_exception_type(openai.BadRequestError),
 )
 def get_speaker_info(text):
-    """Gets the OpenAI functions from the text."""
+    """Gets the OpenAI tool calls from the text."""
 
     function_name = None
     arguments = None
 
-    response_1 = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo-0613",
+    response_1 = client.chat.completions.create(
+        model=AZURE_OPENAI_MODEL_DEPLOYMENT_NAME,
         messages=[
             {
                 "role": "system",
@@ -121,21 +128,19 @@ def get_speaker_info(text):
             },
             {"role": "user", "content": text},
         ],
-        functions=openai_functions,
+        tools=openai_tools,
         max_tokens=OPENAI_MAX_TOKENS,
-        engine=AZURE_OPENAI_MODEL_DEPLOYMENT_NAME,
-        request_timeout=OPENAI_REQUEST_TIMEOUT,
-        function_call={"name": "get_speaker_name"},
+        timeout=OPENAI_REQUEST_TIMEOUT,
+        tool_choice={"type": "function", "function": {"name": "get_speaker_name"}},
         temperature=0.0,
     )
 
-    # The assistant's response includes a function call. We extract the arguments from this function call
+    # The assistant's response includes a tool call. We extract the arguments from it
+    tool_calls = response_1.choices[0].message.tool_calls
 
-    result = response_1.get("choices")[0].get("message")
-
-    if result.get("function_call"):
-        function_name = result.get("function_call").get("name")
-        arguments = json.loads(result.get("function_call").get("arguments"))
+    if tool_calls:
+        function_name = tool_calls[0].function.name
+        arguments = json.loads(tool_calls[0].function.arguments)
 
     return function_name, arguments
 
